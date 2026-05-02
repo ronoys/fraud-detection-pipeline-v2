@@ -1,0 +1,93 @@
+name: Retrain & Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_pr_auc:
+        description: "Minimum PR-AUC to pass performance gate"
+        default: "0.80"
+        required: false
+      min_roc_auc:
+        description: "Minimum ROC-AUC to pass performance gate"
+        default: "0.95"
+        required: false
+  schedule:
+    # Retrain weekly every Sunday at 02:00 UTC
+    - cron: "0 2 * * 0"
+
+jobs:
+  retrain:
+    name: Retrain Models
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install model dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r model/requirements.txt
+
+      - name: Configure Kaggle credentials
+        run: |
+          mkdir -p ~/.config/kaggle
+          echo '{"username":"${{ secrets.KAGGLE_USERNAME }}","key":"${{ secrets.KAGGLE_KEY }}"}' \
+            > ~/.config/kaggle/kaggle.json
+          chmod 600 ~/.config/kaggle/kaggle.json
+
+      - name: Train all models
+        run: python model/train.py
+        env:
+          FRAUD_THRESHOLD: "0.5"
+          MIN_PR_AUC: ${{ github.event.inputs.min_pr_auc || '0.80' }}
+          MIN_ROC_AUC: ${{ github.event.inputs.min_roc_auc || '0.95' }}
+
+      - name: Run performance gate check
+        run: python .github/scripts/validate_gates.py
+
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-artifacts-${{ github.run_id }}
+          path: |
+            model/artifacts/*.joblib
+            model/artifacts/scaler.joblib
+            model/artifacts/training_reference.parquet
+            model/artifacts/model_metadata.json
+          retention-days: 30
+
+      - name: Commit updated metadata and reference
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add model/artifacts/model_metadata.json
+          git add model/artifacts/training_reference.parquet || true
+          git diff --staged --quiet || git commit -m "chore: update model artifacts from retrain run ${{ github.run_id }}"
+          git push
+
+  deploy-after-retrain:
+    name: Deploy Retrained Model
+    runs-on: ubuntu-latest
+    needs: retrain
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Download model artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: model-artifacts-${{ github.run_id }}
+          path: model/artifacts/
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

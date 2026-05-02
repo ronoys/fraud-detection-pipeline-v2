@@ -61,6 +61,7 @@ class PredictionResponse(BaseModel):
     transaction_id: str = Field(..., description="UUID assigned to this prediction request")
     timestamp: str = Field(..., description="ISO 8601 UTC timestamp of when the prediction was made")
     pipeline_steps: list[PipelineStep] = Field(default_factory=list)
+    model_used: str = Field(default="xgboost", description="Model that served this request (champion/challenger routing)")
 
 
 class NotifyRequest(BaseModel):
@@ -74,3 +75,12 @@ class AlertEvent(BaseModel):
     amount: float
     confidence: float
     timestamp: str
+
+
+class DriftResponse(BaseModel):
+    drift_detected: bool
+    drifted_features: int
+    total_features: int
+    share_drifted: float
+    feature_drift_scores: dict[str, float]
+    predictions_analyzed: int

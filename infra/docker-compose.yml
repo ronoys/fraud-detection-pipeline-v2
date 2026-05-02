@@ -10,8 +10,12 @@ services:
     env_file:
       - ../.env
     environment:
-      - MODEL_PATH=model/artifacts/xgboost.joblib
+      - CHAMPION_MODEL_PATH=model/artifacts/xgboost.joblib
+      - CHALLENGER_MODEL_PATH=model/artifacts/random_forest.joblib
       - SCALER_PATH=model/artifacts/scaler.joblib
+      - TRAINING_REFERENCE_PATH=model/artifacts/training_reference.parquet
+      - FRAUD_THRESHOLD=0.5
+      - CHAMPION_WEIGHT=0.8
     volumes:
       - ../model/artifacts:/app/model/artifacts:ro
     depends_on: []
@@ -27,6 +31,21 @@ services:
       - API_URL=http://api:8000
     depends_on:
       - api
+    restart: unless-stopped
+
+  mlflow:
+    image: python:3.11-slim
+    working_dir: /mlflow
+    command: >
+      bash -c "pip install mlflow --quiet &&
+               mlflow server
+               --backend-store-uri /mlflow/mlruns
+               --host 0.0.0.0
+               --port 5000"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ../model/artifacts/mlruns:/mlflow/mlruns
     restart: unless-stopped
 
   prometheus:

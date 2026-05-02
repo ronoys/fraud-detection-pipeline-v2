@@ -6,18 +6,23 @@ Usage:
 
 Output:
     model/artifacts/<model_name>.joblib  — each trained model
-    model/artifacts/best_model.joblib    — best model by PR-AUC
     model/artifacts/scaler.joblib        — fitted StandardScaler for Amount
+    model/artifacts/training_reference.parquet — sample for drift detection
     model/artifacts/model_metadata.json  — metrics and metadata
+    MLflow registry: fraud-detector-champion (XGBoost), fraud-detector-challenger (RandomForest)
 """
 
 import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import joblib
+import mlflow
+import mlflow.sklearn
+import mlflow.xgboost
 import numpy as np
 import pandas as pd
 from imblearn.over_sampling import SMOTE
@@ -48,6 +53,13 @@ logger = logging.getLogger(__name__)
 ARTIFACTS_DIR = Path(__file__).parent / "artifacts"
 ARTIFACTS_DIR.mkdir(exist_ok=True)
 
+MLFLOW_TRACKING_URI = str(ARTIFACTS_DIR / "mlruns")
+EXPERIMENT_NAME = "fraud-detection"
+
+# Performance gate — CI will fail if best model falls below this
+MIN_PR_AUC = 0.80
+MIN_ROC_AUC = 0.95
+
 
 def load_data() -> pd.DataFrame:
     logger.info("Downloading dataset via kagglehub...")
@@ -62,7 +74,7 @@ def load_data() -> pd.DataFrame:
 
 
 def prepare_split(df: pd.DataFrame):
-    df = df.drop(columns=["Time"])
+    # Keep Time in X here so save_training_reference can use it; scale_amount drops it later
     X = df.drop(columns=["Class"])
     y = df["Class"]
     X_train, X_test, y_train, y_test = train_test_split(
@@ -73,10 +85,9 @@ def prepare_split(df: pd.DataFrame):
 
 
 def scale_amount(X_train: pd.DataFrame, X_test: pd.DataFrame):
-    """Fit scaler on training Amount only; transform both splits."""
     scaler = StandardScaler()
-    X_train = X_train.copy()
-    X_test = X_test.copy()
+    X_train = X_train.drop(columns=["Time"], errors="ignore").copy()
+    X_test = X_test.drop(columns=["Time"], errors="ignore").copy()
     X_train["Amount"] = scaler.fit_transform(X_train[["Amount"]])
     X_test["Amount"] = scaler.transform(X_test[["Amount"]])
     return X_train, X_test, scaler
@@ -131,6 +142,20 @@ def evaluate_model(model, X_test: pd.DataFrame, y_test: pd.Series) -> dict:
     }
 
 
+def save_training_reference(X_test_scaled: pd.DataFrame, y_test: pd.Series) -> None:
+    """Save a stratified sample of the test set as the drift detection reference."""
+    ref = X_test_scaled.copy()
+    ref["Class"] = y_test.values
+
+    legit = ref[ref["Class"] == 0].sample(n=min(4500, (ref["Class"] == 0).sum()), random_state=42)
+    fraud = ref[ref["Class"] == 1].sample(n=min(500, (ref["Class"] == 1).sum()), random_state=42)
+    reference = pd.concat([legit, fraud]).drop(columns=["Class"])
+
+    out = ARTIFACTS_DIR / "training_reference.parquet"
+    reference.to_parquet(out, index=False)
+    logger.info("Training reference saved to %s (%d rows)", out, len(reference))
+
+
 def print_table(results: dict) -> None:
     cols = ["roc_auc", "pr_auc", "f1", "precision", "recall", "training_time_seconds"]
     col_w = 16
@@ -149,7 +174,35 @@ def print_table(results: dict) -> None:
     print(sep)
 
 
+def check_performance_gate(metrics: dict, model_name: str) -> None:
+    pr_auc = metrics["pr_auc"]
+    roc_auc = metrics["roc_auc"]
+    if pr_auc < MIN_PR_AUC:
+        raise ValueError(
+            f"PERFORMANCE GATE FAILED: {model_name} PR-AUC={pr_auc:.4f} < minimum {MIN_PR_AUC}"
+        )
+    if roc_auc < MIN_ROC_AUC:
+        raise ValueError(
+            f"PERFORMANCE GATE FAILED: {model_name} ROC-AUC={roc_auc:.4f} < minimum {MIN_ROC_AUC}"
+        )
+    logger.info(
+        "Performance gate passed — %s: PR-AUC=%.4f ROC-AUC=%.4f",
+        model_name, pr_auc, roc_auc,
+    )
+
+
+def register_model(run_id: str, registry_name: str, stage: str = "Production") -> None:
+    client = mlflow.MlflowClient()
+    model_uri = f"runs:/{run_id}/model"
+    mv = mlflow.register_model(model_uri, registry_name)
+    client.transition_model_version_stage(registry_name, mv.version, stage)
+    logger.info("Registered %s v%s → %s stage", registry_name, mv.version, stage)
+
+
 def main():
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    mlflow.set_experiment(EXPERIMENT_NAME)
+
     df = load_data()
     dataset_shape = list(df.shape)
     class_dist = {str(k): int(v) for k, v in df["Class"].value_counts().items()}
@@ -167,41 +220,74 @@ def main():
     joblib.dump(scaler, ARTIFACTS_DIR / "scaler.joblib")
     logger.info("Scaler saved to artifacts/scaler.joblib")
 
+    save_training_reference(X_test_scaled, y_test)
+
     X_sm, y_sm = apply_smote(X_train_scaled, y_train)
 
     models = build_models(neg_train, pos_train)
     all_results = {}
+    run_ids = {}
 
     for name, model in models.items():
         logger.info("--- Training: %s ---", name)
-        if name == "knn":
-            logger.info("KNN stores all training points — prediction will be slow on this dataset size")
+        with mlflow.start_run(run_name=name) as run:
+            mlflow.log_params({
+                "model_type": name,
+                "smote": True,
+                "test_size": 0.2,
+                "random_state": 42,
+                "fraud_threshold": float(os.getenv("FRAUD_THRESHOLD", "0.5")),
+            })
 
-        t0 = time.time()
-        model.fit(X_sm, y_sm)
-        duration = round(time.time() - t0, 2)
-        logger.info("%s trained in %.1fs", name, duration)
+            t0 = time.time()
+            model.fit(X_sm, y_sm)
+            duration = round(time.time() - t0, 2)
+            logger.info("%s trained in %.1fs", name, duration)
 
-        logger.info("Evaluating %s on test set...", name)
-        metrics = evaluate_model(model, X_test_scaled, y_test)
-        metrics["training_time_seconds"] = duration
-        all_results[name] = metrics
+            metrics = evaluate_model(model, X_test_scaled, y_test)
+            metrics["training_time_seconds"] = duration
+            all_results[name] = metrics
+            run_ids[name] = run.info.run_id
 
-        joblib.dump(model, ARTIFACTS_DIR / f"{name}.joblib")
-        logger.info(
-            "%s → PR-AUC=%.4f  ROC-AUC=%.4f  F1=%.4f  Precision=%.4f  Recall=%.4f",
-            name, metrics["pr_auc"], metrics["roc_auc"],
-            metrics["f1"], metrics["precision"], metrics["recall"],
-        )
+            mlflow.log_metrics({
+                "pr_auc": metrics["pr_auc"],
+                "roc_auc": metrics["roc_auc"],
+                "f1": metrics["f1"],
+                "precision": metrics["precision"],
+                "recall": metrics["recall"],
+                "training_time_seconds": duration,
+            })
+
+            if name == "xgboost":
+                mlflow.xgboost.log_model(model, "model")
+            else:
+                mlflow.sklearn.log_model(model, "model")
+
+            joblib.dump(model, ARTIFACTS_DIR / f"{name}.joblib")
+            logger.info(
+                "%s → PR-AUC=%.4f  ROC-AUC=%.4f  F1=%.4f",
+                name, metrics["pr_auc"], metrics["roc_auc"], metrics["f1"],
+            )
 
     best_name = max(all_results, key=lambda n: all_results[n]["pr_auc"])
-    joblib.dump(models[best_name], ARTIFACTS_DIR / "best_model.joblib")
+
+    # Performance gate — blocks CI if champion/challenger don't meet minimums
+    check_performance_gate(all_results["xgboost"], "xgboost (champion)")
+    check_performance_gate(all_results[best_name], f"{best_name} (challenger)")
+
+    # Register XGBoost as champion and best-by-PR-AUC as challenger
+    register_model(run_ids["xgboost"], "fraud-detector-champion")
+    if best_name != "xgboost":
+        register_model(run_ids[best_name], "fraud-detector-challenger")
 
     metadata = {
         "best_model_name": best_name,
+        "champion_model": "xgboost",
         "training_timestamp": datetime.now(timezone.utc).isoformat(),
         "dataset_shape": dataset_shape,
         "class_distribution": class_dist,
+        "performance_gates": {"min_pr_auc": MIN_PR_AUC, "min_roc_auc": MIN_ROC_AUC},
+        "mlflow_tracking_uri": MLFLOW_TRACKING_URI,
         "models": all_results,
     }
     with open(ARTIFACTS_DIR / "model_metadata.json", "w") as f:
@@ -211,11 +297,9 @@ def main():
     print_table(all_results)
 
     best = all_results[best_name]
-    print(f"\nSelected : {best_name}")
-    print(
-        f"Reason   : Highest PR-AUC ({best['pr_auc']:.4f}) — preferred metric for severely imbalanced classes"
-    )
-    print(f"Saved to : model/artifacts/best_model.joblib")
+    print(f"\nChampion  : xgboost (PR-AUC={all_results['xgboost']['pr_auc']:.4f}) — deployed at 80% traffic")
+    print(f"Challenger: {best_name} (PR-AUC={best['pr_auc']:.4f}) — deployed at 20% traffic")
+    print(f"MLflow UI : mlflow ui --backend-store-uri {MLFLOW_TRACKING_URI}")
 
 
 if __name__ == "__main__":

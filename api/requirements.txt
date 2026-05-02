@@ -8,3 +8,6 @@ joblib
 boto3
 prometheus-fastapi-instrumentator
 python-dotenv
+mlflow
+evidently
+pyarrow

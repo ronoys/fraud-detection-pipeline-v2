@@ -1,20 +1,19 @@
 FROM python:3.11-slim
 
-# Create non-root user
 RUN groupadd --gid 1001 appgroup && \
     useradd --uid 1001 --gid appgroup --shell /bin/bash --create-home appuser
 
 WORKDIR /app
 
-# Install dependencies before copying source (better layer caching)
 COPY api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application source
 COPY api/ .
 
-# Ensure artifacts directory exists (model volume will be mounted here)
+# Copy model artifacts when present (baked-in for production deploy).
+# In local Docker Compose these are overridden by a read-only volume mount.
 RUN mkdir -p model/artifacts
+COPY model/artifacts/ model/artifacts/
 
 RUN chown -R appuser:appgroup /app
 USER appuser

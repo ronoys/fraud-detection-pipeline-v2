@@ -64,12 +64,6 @@ class PredictionResponse(BaseModel):
     model_used: str = Field(default="xgboost", description="Model that served this request (champion/challenger routing)")
 
 
-class NotifyRequest(BaseModel):
-    amount: float
-    timestamp: str
-    transaction_id: str
-
-
 class AlertEvent(BaseModel):
     transaction_id: str
     amount: float

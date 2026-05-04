@@ -235,7 +235,6 @@ Runs Evidently `DataDriftPreset` on the last ≤2000 predictions vs. the trainin
 |---|---|
 | `GET /health` | Returns status, champion/challenger names, prediction count |
 | `GET /alerts` | Last 25 fraud alerts (in-memory, resets on restart) |
-| `POST /notify` | Sends SMS via AWS SNS |
 | `GET /metrics` | Prometheus metrics (scraped every 15s) |
 
 ---
@@ -283,22 +282,22 @@ Thresholds: P95 < 500ms, error rate < 1%.
 
 ## Production Deployment (Fly.io)
 
-Initial setup (one-time):
+Both services are deployed and live:
 
-```bash
-fly auth login
-fly apps create fraud-detection-api
-fly secrets set FLY_API_TOKEN=...
-```
+| Service | URL |
+|---|---|
+| API | https://fraud-detection-api.fly.dev |
+| Frontend | https://fraud-ui-kvachher.fly.dev |
 
-Manual deploy:
+Manual redeploy:
 
 ```bash
 python model/train.py          # generate artifacts
-fly deploy                     # builds image, bakes in artifacts, deploys
+fly deploy                     # API — builds image, bakes in artifacts, deploys
+fly deploy --config fly.frontend.toml  # Frontend
 ```
 
-After setup, every push to `main` deploys automatically via GitHub Actions. The `fly.toml` config sets 1GB shared VM, HTTPS enforced, health check on `/health`, auto-stop when idle.
+Every push to `main` redeploys the API automatically via GitHub Actions. The `fly.toml` config sets 1GB shared VM, HTTPS enforced, health check on `/health`, auto-stop when idle.
 
 ---
 
@@ -347,6 +346,7 @@ fraud-detection/
 │   └── prometheus.yml
 ├── load-testing/
 │   └── script.js           # k6 ramp + threshold config
-├── fly.toml                # Fly.io production config
+├── fly.toml                # Fly.io API config
+├── fly.frontend.toml       # Fly.io frontend config
 └── pyproject.toml          # pytest + ruff config
 ```

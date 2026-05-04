@@ -5,7 +5,6 @@ pandas
 scikit-learn
 xgboost
 joblib
-boto3
 prometheus-fastapi-instrumentator
 python-dotenv
 mlflow

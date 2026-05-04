@@ -138,23 +138,6 @@ if st.button("Score Transaction", type="primary", use_container_width=True):
         metric_cols[1].metric("Risk level", risk_label(result["confidence"]))
         metric_cols[2].metric("Transaction ID", result["transaction_id"][:8])
 
-        if st.button("Send SMS Alert", use_container_width=True):
-            try:
-                notify_response = requests.post(
-                    f"{API_URL}/notify",
-                    json={
-                        "amount": ex["amount"],
-                        "timestamp": result["timestamp"],
-                        "transaction_id": result["transaction_id"],
-                    },
-                    timeout=10,
-                )
-                notify_response.raise_for_status()
-                nr = notify_response.json()
-                st.success(f"SMS sent: \"{nr['message']}\"")
-            except requests.RequestException as exc:
-                st.error(f"SMS failed: {exc}")
-
 st.divider()
 
 try:

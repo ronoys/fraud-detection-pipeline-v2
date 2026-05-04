@@ -5,18 +5,16 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-import boto3
 import pandas as pd
-from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from prometheus_client import Counter, Histogram
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from predictor import FEATURE_COLUMNS, load_model, predict, prediction_log
-from schemas import AlertEvent, DriftResponse, NotifyRequest, PipelineStep, PredictionResponse, TransactionRequest
+from schemas import AlertEvent, DriftResponse, PipelineStep, PredictionResponse, TransactionRequest
 
 load_dotenv()
 
@@ -210,20 +208,3 @@ def predict_fraud(transaction: TransactionRequest) -> PredictionResponse:
         )
 
     return response
-
-
-@app.post("/notify", tags=["ops"])
-def notify(request: NotifyRequest):
-    phone = os.getenv("ALERT_PHONE_NUMBER", "+18489994153")
-    region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-    dt = datetime.fromisoformat(request.timestamp.replace("Z", "+00:00"))
-    formatted_time = dt.strftime("%B %d, %Y at %I:%M %p UTC")
-    message = f"Was this charge for ${request.amount:.2f} on {formatted_time} you? Reply STOP to opt out."
-    try:
-        sns = boto3.client("sns", region_name=region)
-        sns.publish(PhoneNumber=phone, Message=message)
-        logger.info("SMS alert sent for transaction_id=%s", request.transaction_id)
-        return {"sent": True, "message": message}
-    except (BotoCoreError, ClientError) as exc:
-        logger.error("SNS publish failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc

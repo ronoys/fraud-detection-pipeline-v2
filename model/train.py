@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 ARTIFACTS_DIR = Path(__file__).parent / "artifacts"
 ARTIFACTS_DIR.mkdir(exist_ok=True)
 
-MLFLOW_TRACKING_URI = str(ARTIFACTS_DIR / "mlruns")
+MLFLOW_TRACKING_URI = f"sqlite:///{ARTIFACTS_DIR / 'mlruns.db'}"
 EXPERIMENT_NAME = "fraud-detection"
 
 # Performance gate — CI will fail if best model falls below this
@@ -115,7 +115,6 @@ def build_models(neg: int, pos: int) -> dict:
         ),
         "xgboost": XGBClassifier(
             scale_pos_weight=neg / pos,
-            use_label_encoder=False,
             eval_metric="logloss",
             random_state=42,
         ),

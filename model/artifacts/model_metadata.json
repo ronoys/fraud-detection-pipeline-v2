@@ -1,6 +1,7 @@
 {
   "best_model_name": "random_forest",
-  "training_timestamp": "2026-04-22T21:40:07.681196+00:00",
+  "champion_model": "xgboost",
+  "training_timestamp": "2026-05-04T22:08:59.882797+00:00",
   "dataset_shape": [
     284807,
     31
@@ -9,6 +10,11 @@
     "0": 284315,
     "1": 492
   },
+  "performance_gates": {
+    "min_pr_auc": 0.8,
+    "min_roc_auc": 0.95
+  },
+  "mlflow_tracking_uri": "sqlite:////Users/kushvachher/msml605/fraud-detection/model/artifacts/mlruns.db",
   "models": {
     "logistic_regression": {
       "roc_auc": 0.97,
@@ -22,7 +28,7 @@
         "fn": 8,
         "tp": 90
       },
-      "training_time_seconds": 1.74
+      "training_time_seconds": 2.15
     },
     "knn": {
       "roc_auc": 0.9485,
@@ -36,7 +42,7 @@
         "fn": 12,
         "tp": 86
       },
-      "training_time_seconds": 0.04
+      "training_time_seconds": 0.06
     },
     "random_forest": {
       "roc_auc": 0.9682,
@@ -50,7 +56,7 @@
         "fn": 17,
         "tp": 81
       },
-      "training_time_seconds": 46.31
+      "training_time_seconds": 62.0
     },
     "xgboost": {
       "roc_auc": 0.97,
@@ -64,7 +70,7 @@
         "fn": 12,
         "tp": 86
       },
-      "training_time_seconds": 1.36
+      "training_time_seconds": 1.74
     }
   }
 }

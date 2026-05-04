@@ -96,7 +96,7 @@ The `/drift` endpoint runs Evidently's `DataDriftPreset` against `training_refer
 
 ```bash
 python model/train.py
-mlflow ui --backend-store-uri model/artifacts/mlruns   # → localhost:5000
+mlflow ui --backend-store-uri sqlite:///model/artifacts/mlruns.db   # → localhost:5000
 ```
 
 ---

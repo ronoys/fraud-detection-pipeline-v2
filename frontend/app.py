@@ -107,13 +107,15 @@ if st.button("Score Transaction", type="primary", use_container_width=True):
         time.sleep(0.4)
         st.write("**Step 2** — Normalizing amount with StandardScaler")
         time.sleep(0.4)
-        st.write("**Step 3** — Running XGBoost inference")
         try:
             response = requests.post(f"{API_URL}/predict", json=payload, timeout=30)
             response.raise_for_status()
             result = response.json()
+            model_label = "XGBoost (champion)" if result.get("model_used") == "xgboost" else "RandomForest (challenger)"
+            st.write(f"**Step 3** — Running {model_label} inference")
         except requests.RequestException as exc:
             error = str(exc)
+            st.write("**Step 3** — Model inference")
         time.sleep(0.3)
         st.write("**Step 4** — Applying decision threshold")
         time.sleep(0.3)

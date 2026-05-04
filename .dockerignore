@@ -1,0 +1,30 @@
+# Not needed for inference
+model/artifacts/knn.joblib
+model/artifacts/logistic_regression.joblib
+model/artifacts/mlruns
+model/artifacts/mlruns.db
+model/artifacts/evaluation
+
+# Training code and notebooks
+model/train.py
+model/evaluate.py
+model/extract_examples.py
+model/requirements.txt
+
+# Tests and dev tooling
+tests/
+load-testing/
+monitoring/
+.github/
+infra/docker-compose.yml
+infra/frontend.Dockerfile
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Local env
+.env
+.venv/
+venv/

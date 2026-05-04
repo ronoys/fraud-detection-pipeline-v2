@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Contribution Policy
+
+Never add Claude as a co-author or contributor in commit messages, PR descriptions, comments, or anywhere else in the codebase.
+
 ## Project Overview
 
 MLOps demo for real-time credit card fraud detection. Architecture: Streamlit frontend → FastAPI backend → XGBoost/RandomForest model, with Prometheus + Grafana observability.
@@ -23,7 +27,7 @@ pip install -r model/requirements.txt
 python model/train.py        # trains LR, KNN, RF, XGB; logs to MLflow; saves artifacts to model/artifacts/
 python model/evaluate.py     # generates ROC/PR curves, confusion matrices, classification reports
 python model/extract_examples.py  # extracts hardcoded examples for the Streamlit frontend
-mlflow ui --backend-store-uri model/artifacts/mlruns  # view experiment tracking UI at localhost:5000
+mlflow ui --backend-store-uri sqlite:///model/artifacts/mlruns.db  # view experiment tracking UI at localhost:5000
 ```
 
 ### Linting (used in CI)

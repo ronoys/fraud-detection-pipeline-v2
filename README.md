@@ -6,6 +6,35 @@ Dataset: [Kaggle Credit Card Fraud Detection](https://www.kaggle.com/mlg-ulb/cre
 
 ---
 
+## Quick Start
+
+**Prerequisites:** Docker, Python 3.11+, and the Kaggle dataset CSV saved locally.
+
+```bash
+# 1. Clone and copy env config
+git clone <repo-url> && cd fraud-detection
+cp .env.example .env
+
+# 2. Train models — generates model/artifacts/ (required before starting the stack)
+pip install -r model/requirements.txt
+python model/train.py          # ~2 min; saves xgboost.joblib, random_forest.joblib, scaler.joblib
+
+# 3. Start the full local stack
+docker-compose -f infra/docker-compose.yml up --build
+```
+
+| Service | Local | Production |
+|---|---|---|
+| Frontend | http://localhost:8501 | https://fraud-ui-kvachher.fly.dev |
+| API (+ interactive docs) | http://localhost:8000/docs | https://fraud-detection-api.fly.dev/docs |
+| MLflow | http://localhost:5000 | local only |
+| Prometheus | http://localhost:9090 | local only |
+| Grafana | http://localhost:3000 (admin / admin) | local only |
+
+> **Skipping Docker?** Run `uvicorn api.main:app --reload` and `streamlit run frontend/app.py` directly after training.
+
+---
+
 ## Architecture
 
 ```
@@ -327,6 +356,8 @@ fraud-detection/
 │   ├── evaluate.py         # ROC/PR curves, confusion matrices, threshold sweep
 │   ├── extract_examples.py # Extracts hardcoded examples for frontend
 │   └── artifacts/          # joblib models, scaler, training_reference.parquet, mlruns/
+├── notebooks/
+│   └── model_selection.ipynb  # EDA and model comparison used to inform architecture choices
 ├── frontend/
 │   └── app.py              # Streamlit transaction scoring demo
 ├── tests/

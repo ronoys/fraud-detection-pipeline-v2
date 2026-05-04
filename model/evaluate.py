@@ -15,6 +15,7 @@ import logging
 from pathlib import Path
 
 import joblib
+import kagglehub
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -32,8 +33,6 @@ from sklearn.metrics import (
     roc_curve,
 )
 from sklearn.model_selection import train_test_split
-
-import kagglehub
 
 logging.basicConfig(
     level=logging.INFO,

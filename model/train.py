@@ -20,10 +20,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import joblib
+import kagglehub
 import mlflow
 import mlflow.sklearn
 import mlflow.xgboost
-import numpy as np
 import pandas as pd
 from imblearn.over_sampling import SMOTE
 from sklearn.ensemble import RandomForestClassifier
@@ -40,8 +40,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
-
-import kagglehub
 
 logging.basicConfig(
     level=logging.INFO,
